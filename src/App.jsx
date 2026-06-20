@@ -1154,7 +1154,7 @@ function Analytics({ events, competitors, standings }) {
     if (is.length) { ironStomach = is[0]; lightWeight = is[is.length - 1]; }
   }
 
-  // ---- head to head matrix (tennis only for now) ----
+  // ---- head to head matrix (tennis 1v1 + RR: each winner beats both opponents) ----
   const h2h = {};
   competitors.forEach((a) => competitors.forEach((b) => { if (a.id !== b.id) h2h[a.id + "|" + b.id] = 0; }));
   tennisEvents.forEach((ev) => {
@@ -1162,6 +1162,14 @@ function Analytics({ events, competitors, standings }) {
       const w = (ev.results || {})[m.key]; if (!w) return;
       const loser = w === m.a ? m.b : m.a;
       if (h2h[w + "|" + loser] != null) h2h[w + "|" + loser]++;
+    });
+  });
+  rrEvents.forEach((ev) => {
+    (ev.schedule || []).forEach((r, i) => {
+      const m = (ev.matches || {})[i]; if (!m || !m.winner) return;
+      const winners = m.winner === "A" ? r.teamA : r.teamB;
+      const losers = m.winner === "A" ? r.teamB : r.teamA;
+      winners.forEach((w) => losers.forEach((l) => { if (h2h[w + "|" + l] != null) h2h[w + "|" + l]++; }));
     });
   });
 
@@ -1210,7 +1218,7 @@ function Analytics({ events, competitors, standings }) {
 
       {Object.keys(nemesis).length > 0 && (
         <>
-          <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>Nemeses (Tennis)</div>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>Nemeses</div>
           <div style={{ ...card, marginBottom: 14, padding: "12px 14px" }}>
             {competitors.filter((c) => nemesis[c.id]).map((c, i) => (
               <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderTop: i ? "1px solid #f1f5f9" : "none" }}>
