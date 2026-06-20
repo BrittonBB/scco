@@ -233,15 +233,15 @@ function Podium({ slots, extras = [] }) {
         ))}
       </div>
       {extras.length > 0 && (
-        <div style={{ position: "relative", display: "flex", gap: 8, marginTop: 14, paddingBottom: 14 }}>
+        <div style={{ position: "relative", display: "flex", gap: 6, marginTop: 14, paddingBottom: 14 }}>
           {extras.map(({ rank, s, last }) => (
-            <div key={s.id} style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, background: last ? "rgba(220,38,38,0.25)" : "rgba(255,255,255,0.1)", border: last ? "1px solid rgba(248,113,113,0.55)" : "1px solid rgba(255,255,255,0.12)" }}>
-              {last ? <span style={{ fontSize: 18 }}>🤡</span> : <span style={{ width: 24, height: 24, borderRadius: "50%", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, color: "#fff" }}>{rank}</span>}
+            <div key={s.id} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 6, padding: "8px 8px", borderRadius: 10, background: last ? "rgba(220,38,38,0.25)" : "rgba(255,255,255,0.1)", border: last ? "1px solid rgba(248,113,113,0.55)" : "1px solid rgba(255,255,255,0.12)" }}>
+              {last ? <span style={{ fontSize: 18, flexShrink: 0 }}>🤡</span> : <span style={{ width: 22, height: 22, flexShrink: 0, borderRadius: "50%", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, color: "#fff" }}>{rank}</span>}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ color: "#fff", fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
-                <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, color: last ? "#fca5a5" : "rgba(255,255,255,0.55)" }}>{last ? "DEAD LAST 🥄" : ordinal(rank).toUpperCase() + " PLACE"}</div>
+                <div style={{ color: "#fff", fontWeight: 700, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
+                <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.5, color: last ? "#fca5a5" : "rgba(255,255,255,0.55)" }}>{last ? "DEAD LAST 🥄" : ordinal(rank).toUpperCase() + " PLACE"}</div>
               </div>
-              <div style={{ color: last ? "#fca5a5" : "#fde68a", fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{s.total}<span style={{ fontSize: 8, opacity: 0.8, marginLeft: 1 }}>PTS</span></div>
+              <div style={{ color: last ? "#fca5a5" : "#fde68a", fontWeight: 800, fontSize: 12, flexShrink: 0 }}>{s.total}<span style={{ fontSize: 8, opacity: 0.8, marginLeft: 1 }}>PTS</span></div>
             </div>
           ))}
         </div>
