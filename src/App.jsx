@@ -181,12 +181,12 @@ export default function App() {
   if (loading) return <div style={{ minHeight: 480, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui" }}><div style={{ textAlign: "center", color: "#64748b" }}><Trophy size={32} style={{ marginBottom: 8 }} /><div>Loading the Games…</div></div></div>;
 
   return (
-    <div style={{ fontFamily: "-apple-system, system-ui, sans-serif", maxWidth: 760, margin: "0 auto", color: "#0f172a", paddingBottom: 40 }}>
+    <div style={{ fontFamily: "-apple-system, system-ui, sans-serif", maxWidth: 760, margin: "0 auto", color: "#0f172a", paddingBottom: 40, width: "100%" }}>
       <div style={{ background: "linear-gradient(135deg,#1e3a8a,#3b0764)", color: "white", padding: "20px 18px 16px", borderRadius: "0 0 18px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ fontSize: 28 }}>🏛️</div>
-            <div><div style={{ fontSize: 11, letterSpacing: 1.5, opacity: 0.8, fontWeight: 600 }}>SOUTH CAROLINA</div><div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1 }}>Small Claims Olympics</div></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, overflow: "hidden" }}>
+            <div style={{ fontSize: 28, flexShrink: 0 }}>🏛️</div>
+            <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, letterSpacing: 1.5, opacity: 0.8, fontWeight: 600 }}>SOUTH CAROLINA</div><div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1 }}>Small Claims Olympics</div></div>
           </div>
           <button onClick={manualSync} title="Sync" style={iconBtn}><RefreshCw size={18} style={{ animation: syncing ? "spin 0.6s linear" : "none" }} /></button>
         </div>
@@ -226,7 +226,7 @@ function Podium({ slots, extras = [] }) {
           <div key={s.id} style={{ width: 104, maxWidth: "31%", textAlign: "center" }}>
             <div style={{ fontSize: 26, marginBottom: 2 }}>{["🥇", "🥈", "🥉"][rank - 1]}</div>
             <div style={{ width: 46, height: 46, borderRadius: "50%", margin: "0 auto 6px", background: COL[rank], display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, color: "#1f2937", boxShadow: "0 3px 8px rgba(0,0,0,0.3)", border: "2px solid rgba(255,255,255,0.6)" }}>{s.name.charAt(0).toUpperCase()}</div>
-            <div style={{ color: "#fff", fontWeight: 700, fontSize: 13, lineHeight: 1.15, marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: 13, lineHeight: 1.15, marginBottom: 2, wordBreak: "break-word" }}>{s.name}</div>
             <div style={{ color: "#fde68a", fontWeight: 800, fontSize: 15, marginBottom: 6 }}>{s.total}<span style={{ fontSize: 9, opacity: 0.8, marginLeft: 2 }}>PTS</span></div>
             <div style={{ height: H[rank], background: COL[rank], borderRadius: "8px 8px 0 0", display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 8, boxShadow: "inset 0 2px 6px rgba(255,255,255,0.4)" }}><span style={{ fontWeight: 900, fontSize: 26, color: "rgba(0,0,0,0.32)" }}>{rank}</span></div>
           </div>
@@ -241,7 +241,7 @@ function Podium({ slots, extras = [] }) {
                 <div style={{ color: "#fff", fontWeight: 700, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
                 <div style={{ fontSize: 9.5, fontWeight: 800, letterSpacing: 0.5, color: last ? "#fca5a5" : "rgba(255,255,255,0.55)" }}>{last ? "DEAD LAST 🥄" : ordinal(rank).toUpperCase() + " PLACE"}</div>
               </div>
-              <div style={{ color: last ? "#fca5a5" : "#fde68a", fontWeight: 800, fontSize: 13 }}>{s.total}<span style={{ fontSize: 8, opacity: 0.8, marginLeft: 1 }}>PTS</span></div>
+              <div style={{ color: last ? "#fca5a5" : "#fde68a", fontWeight: 800, fontSize: 13, flexShrink: 0 }}>{s.total}<span style={{ fontSize: 8, opacity: 0.8, marginLeft: 1 }}>PTS</span></div>
             </div>
           ))}
         </div>
@@ -294,10 +294,10 @@ function Leaderboard({ standings, events, competitors }) {
         const isOpen = open[s.id];
         return (
           <div key={s.id} style={{ ...card, padding: 0, marginBottom: 10, overflow: "hidden", border: i < 3 ? `1.5px solid ${MEDAL_COLORS[i]}` : card.border }}>
-            <div onClick={() => setOpen((o) => ({ ...o, [s.id]: !o[s.id] }))} style={{ display: "flex", alignItems: "center", padding: "12px 14px", cursor: "pointer", gap: 12 }}>
+            <div onClick={() => setOpen((o) => ({ ...o, [s.id]: !o[s.id] }))} style={{ display: "flex", alignItems: "center", padding: "12px 18px 12px 14px", cursor: "pointer", gap: 12 }}>
               <div style={{ width: 30, textAlign: "center", fontWeight: 800, fontSize: 18, color: i < 3 ? MEDAL_COLORS[i] : "#94a3b8" }}>{i < 3 ? ["🥇", "🥈", "🥉"][i] : i + 1}</div>
-              <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 16 }}>{s.name}</div><div style={{ fontSize: 12, color: "#94a3b8" }}>{s.events} event{s.events !== 1 ? "s" : ""} scored</div></div>
-              <div style={{ textAlign: "right" }}><div style={{ fontWeight: 800, fontSize: 20, color: "#1e3a8a" }}>{s.total}</div><div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: 0.5 }}>PTS</div></div>
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 16, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div><div style={{ fontSize: 12, color: "#94a3b8" }}>{s.events} event{s.events !== 1 ? "s" : ""} scored</div></div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontWeight: 800, fontSize: 20, color: "#1e3a8a" }}>{s.total}</div><div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: 0.5 }}>PTS</div></div>
               {s.breakdown.length > 0 && (isOpen ? <ChevronDown size={16} color="#94a3b8" /> : <ChevronRight size={16} color="#94a3b8" />)}
             </div>
             {isOpen && s.breakdown.length > 0 && (
@@ -390,9 +390,9 @@ function Events({ events, setEvents, competitors, teams, scheme }) {
         return (
           <div key={ev.id} style={{ ...card, marginBottom: 10, display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ width: 40, height: 40, borderRadius: 11, background: t.panelBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.06)" }}>{t.emoji}</div>
-            <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setEditing(ev.id)}>
+            <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => setEditing(ev.id)}>
               <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 7 }}>{ev.name}{ev.done && <span style={badge("#dcfce7", "#16a34a")}>FINAL</span>}</div>
-              <div style={{ fontSize: 12, color: "#94a3b8" }}>{meta}</div>
+              <div style={{ fontSize: 12, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{meta}</div>
             </div>
             <button onClick={() => setEditing(ev.id)} style={smallBtn}>Score</button>
             <button onClick={() => deleteEvent(ev.id)} style={iconBtnGray}><Trash2 size={15} /></button>
