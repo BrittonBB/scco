@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Trophy, Users, User, Plus, Medal, Trash2, ChevronRight, ChevronDown, RefreshCw, X, Crown, Repeat, Coins } from "lucide-react";
+import { Trophy, Users, User, Plus, Medal, Trash2, ChevronRight, ChevronDown, RefreshCw, X, Crown, Repeat, Coins, BarChart2 } from "lucide-react";
 import { loadKey, saveKey, subscribeToChanges } from "./storage";
 
 // ---- Scoring ----
@@ -194,12 +194,12 @@ export default function App() {
       <div style={{ display: "flex", gap: 6, padding: "12px 14px 0", flexWrap: "wrap" }}>
         <TabBtn active={tab === "leaderboard"} onClick={() => setTab("leaderboard")} icon={<Crown size={15} />} label="Leaderboard" />
         <TabBtn active={tab === "events"} onClick={() => setTab("events")} icon={<Medal size={15} />} label="Events" />
-        <TabBtn active={tab === "people"} onClick={() => setTab("people")} icon={<Users size={15} />} label="Roster" />
+        <TabBtn active={tab === "analytics"} onClick={() => setTab("analytics")} icon={<BarChart2 size={15} />} label="Analytics" />
       </div>
       <div style={{ padding: "14px" }}>
         {tab === "leaderboard" && <Leaderboard standings={standings} events={events} competitors={competitors} />}
         {tab === "events" && <Events events={events} setEvents={setEvents} competitors={competitors} teams={teams} scheme={scheme} />}
-        {tab === "people" && <Roster competitors={competitors} setCompetitors={setCompetitors} teams={teams} setTeams={setTeams} scheme={scheme} setScheme={setScheme} />}
+        {tab === "analytics" && <Analytics events={events} competitors={competitors} standings={standings} />}
       </div>
       <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
     </div>
@@ -1079,6 +1079,242 @@ function ScoringEditor({ scheme, setScheme }) {
         </div>
       ))}
       <button onClick={save} style={{ ...primaryBtn, width: "100%", marginTop: 8, justifyContent: "center" }}>Save scoring</button>
+    </div>
+  );
+}
+
+// ============ ANALYTICS ============
+function Analytics({ events, competitors, standings }) {
+  const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
+  const firstName = (id) => nameOf(id).split(" ")[0];
+
+  // ---- pair stats from all RR events (spikeball, beer die) ----
+  const pairStats = {};
+  const rrEvents = events.filter((e) => e.type === "roundrobin");
+  rrEvents.forEach((ev) => {
+    (ev.schedule || []).forEach((r, i) => {
+      const m = (ev.matches || {})[i]; if (!m || !m.winner) return;
+      const winPair = m.winner === "A" ? r.teamA : r.teamB;
+      const losePair = m.winner === "A" ? r.teamB : r.teamA;
+      const wk = pairKey(winPair[0], winPair[1]);
+      const lk = pairKey(losePair[0], losePair[1]);
+      if (!pairStats[wk]) pairStats[wk] = { ids: winPair, wins: 0, losses: 0 };
+      if (!pairStats[lk]) pairStats[lk] = { ids: losePair, wins: 0, losses: 0 };
+      pairStats[wk].wins++;
+      pairStats[lk].losses++;
+    });
+  });
+  const pairArr = Object.values(pairStats).filter((p) => p.wins + p.losses > 0).map((p) => ({ ...p, pct: p.wins / (p.wins + p.losses), games: p.wins + p.losses }));
+  pairArr.sort((a, b) => b.pct - a.pct || b.games - a.games);
+  const bestPair = pairArr[0] || null;
+  const worstPair = pairArr[pairArr.length - 1] || null;
+
+  // ---- individual win/loss across tennis + RR ----
+  const indWins = {}, indLosses = {}, indGames = {};
+  competitors.forEach((c) => { indWins[c.id] = 0; indLosses[c.id] = 0; indGames[c.id] = 0; });
+
+  rrEvents.forEach((ev) => {
+    (ev.schedule || []).forEach((r, i) => {
+      const m = (ev.matches || {})[i]; if (!m || !m.winner) return;
+      const winners = m.winner === "A" ? r.teamA : r.teamB;
+      const losers = m.winner === "A" ? r.teamB : r.teamA;
+      winners.forEach((id) => { if (indWins[id] != null) { indWins[id]++; indGames[id]++; } });
+      losers.forEach((id) => { if (indLosses[id] != null) { indLosses[id]++; indGames[id]++; } });
+    });
+  });
+  const tennisEvents = events.filter((e) => e.type === "tournament");
+  tennisEvents.forEach((ev) => {
+    tennisPairings(ev.players || []).forEach((m) => {
+      const w = (ev.results || {})[m.key];
+      if (!w) return;
+      const loser = w === m.a ? m.b : m.a;
+      if (indWins[w] != null) { indWins[w]++; indGames[w]++; }
+      if (indLosses[loser] != null) { indLosses[loser]++; indGames[loser]++; }
+    });
+  });
+
+  const indArr = competitors.map((c) => ({ id: c.id, wins: indWins[c.id] || 0, losses: indLosses[c.id] || 0, games: indGames[c.id] || 0, pct: indGames[c.id] ? indWins[c.id] / indGames[c.id] : 0 })).filter((x) => x.games > 0);
+  indArr.sort((a, b) => b.pct - a.pct || b.wins - a.wins);
+  const mostDominant = indArr[0] || null;
+  const biggestChoker = [...indArr].sort((a, b) => a.pct - b.pct || b.losses - a.losses)[0] || null;
+
+  // ---- poker ----
+  const pokerEv = events.find((e) => e.type === "poker");
+  let pokerKing = null, brokeboy = null;
+  if (pokerEv) {
+    const ls = computeLedgerStandings(pokerEv).filter((s) => s.buyIn > 0 || s.cashOut > 0);
+    if (ls.length) { pokerKing = ls[0]; brokeboy = ls[ls.length - 1]; }
+  }
+
+  // ---- 9/9/9 ----
+  const inningsEv = events.find((e) => e.type === "innings");
+  let ironStomach = null, lightWeight = null;
+  if (inningsEv) {
+    const is = computeInningsStandings(inningsEv).filter((s) => s.innings > 0);
+    if (is.length) { ironStomach = is[0]; lightWeight = is[is.length - 1]; }
+  }
+
+  // ---- head to head matrix (tennis only for now) ----
+  const h2h = {};
+  competitors.forEach((a) => competitors.forEach((b) => { if (a.id !== b.id) h2h[a.id + "|" + b.id] = 0; }));
+  tennisEvents.forEach((ev) => {
+    tennisPairings(ev.players || []).forEach((m) => {
+      const w = (ev.results || {})[m.key]; if (!w) return;
+      const loser = w === m.a ? m.b : m.a;
+      if (h2h[w + "|" + loser] != null) h2h[w + "|" + loser]++;
+    });
+  });
+
+  // ---- nemesis: who beats you the most ----
+  const nemesis = {};
+  competitors.forEach((c) => {
+    let worst = null, worstW = 0;
+    competitors.forEach((o) => {
+      if (o.id === c.id) return;
+      const w = h2h[o.id + "|" + c.id] || 0;
+      if (w > worstW) { worstW = w; worst = o.id; }
+    });
+    if (worst && worstW > 0) nemesis[c.id] = { id: worst, wins: worstW };
+  });
+
+  // ---- total hot dogs/beers ----
+  const totalInnings = inningsEv ? (inningsEv.players || []).reduce((s, id) => s + Math.min(9, Number((inningsEv.progress || {})[id]) || 0), 0) : 0;
+
+  // ---- points leader momentum (who's closest to 1st) ----
+  const gap = standings.length >= 2 ? standings[0].total - standings[1].total : 0;
+
+  const hasAnyData = indArr.length > 0 || pokerKing || ironStomach || bestPair;
+
+  if (!hasAnyData) return (
+    <div style={{ textAlign: "center", padding: "48px 20px", color: "#94a3b8" }}>
+      <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
+      <div style={{ fontWeight: 700, color: "#64748b", marginBottom: 4 }}>No stats yet</div>
+      <div style={{ fontSize: 13 }}>Play some games first — analytics will appear here.</div>
+    </div>
+  );
+
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>Superlatives</div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+        {bestPair && <StatCard emoji="🤝" label="Best Duo" value={`${firstName(bestPair.ids[0])} + ${firstName(bestPair.ids[1])}`} sub={`${bestPair.wins}W-${bestPair.losses}L · ${Math.round(bestPair.pct * 100)}%`} color="#dcfce7" accent="#16a34a" />}
+        {worstPair && bestPair !== worstPair && <StatCard emoji="💀" label="Worst Duo" value={`${firstName(worstPair.ids[0])} + ${firstName(worstPair.ids[1])}`} sub={`${worstPair.wins}W-${worstPair.losses}L · ${Math.round(worstPair.pct * 100)}%`} color="#fee2e2" accent="#dc2626" />}
+        {mostDominant && <StatCard emoji="🔥" label="Most Dominant" value={firstName(mostDominant.id)} sub={`${mostDominant.wins}W-${mostDominant.losses}L · ${Math.round(mostDominant.pct * 100)}% win rate`} color="#fef3c7" accent="#d97706" />}
+        {biggestChoker && biggestChoker.id !== mostDominant?.id && <StatCard emoji="🥶" label="Ice Cold" value={firstName(biggestChoker.id)} sub={`${biggestChoker.wins}W-${biggestChoker.losses}L · ${Math.round(biggestChoker.pct * 100)}% win rate`} color="#eff6ff" accent="#3b82f6" />}
+        {pokerKing && pokerKing.net > 0 && <StatCard emoji="🃏" label="Poker King" value={firstName(pokerKing.id)} sub={`+$${pokerKing.net} net`} color="#fef9c3" accent="#ca8a04" />}
+        {brokeboy && brokeboy.net < 0 && <StatCard emoji="💸" label="Broke Boy" value={firstName(brokeboy.id)} sub={`-$${Math.abs(brokeboy.net)} net`} color="#fce7f3" accent="#db2777" />}
+        {ironStomach && <StatCard emoji="🌭" label="Iron Stomach" value={firstName(ironStomach.id)} sub={`${ironStomach.innings} innings · ${ironStomach.innings} hot dogs + ${ironStomach.innings} beers`} color="#fff7ed" accent="#ea580c" />}
+        {lightWeight && lightWeight.id !== ironStomach?.id && <StatCard emoji="🥗" label="Light Weight" value={firstName(lightWeight.id)} sub={`Only ${lightWeight.innings} innings completed`} color="#f0fdf4" accent="#22c55e" />}
+      </div>
+
+      {Object.keys(nemesis).length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>Nemeses (Tennis)</div>
+          <div style={{ ...card, marginBottom: 14, padding: "12px 14px" }}>
+            {competitors.filter((c) => nemesis[c.id]).map((c, i) => (
+              <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderTop: i ? "1px solid #f1f5f9" : "none" }}>
+                <div style={{ flex: 1, fontWeight: 600, fontSize: 14 }}>{c.name}</div>
+                <div style={{ fontSize: 13, color: "#64748b" }}>loses to</div>
+                <div style={{ fontWeight: 700, fontSize: 14, color: "#dc2626" }}>{firstName(nemesis[c.id].id)}</div>
+                <div style={{ fontSize: 11, color: "#94a3b8" }}>{nemesis[c.id].wins}× 😈</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {indArr.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>Win Rate (All Events)</div>
+          <div style={{ ...card, marginBottom: 14, padding: "12px 14px" }}>
+            {[...indArr].sort((a, b) => b.pct - a.pct).map((s, i) => {
+              const pct = Math.round(s.pct * 100);
+              return (
+                <div key={s.id} style={{ marginBottom: i < indArr.length - 1 ? 10 : 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>{nameOf(s.id)}</span>
+                    <span style={{ fontSize: 12, color: "#64748b" }}>{s.wins}W-{s.losses}L · <b style={{ color: pct >= 50 ? "#16a34a" : "#dc2626" }}>{pct}%</b></span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 4, background: "#f1f5f9", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${pct}%`, borderRadius: 4, background: pct >= 60 ? "#16a34a" : pct >= 40 ? "#f59e0b" : "#ef4444", transition: "width 0.4s" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {pairArr.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>All Pair Records</div>
+          <div style={{ ...card, marginBottom: 14, padding: "12px 14px" }}>
+            {pairArr.map((p, i) => {
+              const pct = Math.round(p.pct * 100);
+              return (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", borderTop: i ? "1px solid #f1f5f9" : "none" }}>
+                  <div style={{ fontSize: 14 }}>{pct === 100 ? "🔥" : pct === 0 ? "💀" : pct >= 60 ? "✅" : "❌"}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{firstName(p.ids[0])} + {firstName(p.ids[1])}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: "#64748b", flexShrink: 0 }}>{p.wins}W-{p.losses}L</div>
+                  <div style={{ fontWeight: 800, fontSize: 13, color: pct >= 50 ? "#16a34a" : "#dc2626", width: 36, textAlign: "right", flexShrink: 0 }}>{pct}%</div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      {totalInnings > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>9/9/9 Consumption</div>
+          <div style={{ ...card, marginBottom: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-around", padding: "10px 0" }}>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 28 }}>🌭</div><div style={{ fontWeight: 800, fontSize: 22, color: "#ea580c" }}>{totalInnings}</div><div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>HOT DOGS</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 28 }}>🍺</div><div style={{ fontWeight: 800, fontSize: 22, color: "#d97706" }}>{totalInnings}</div><div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>BEERS</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: 28 }}>⚾</div><div style={{ fontWeight: 800, fontSize: 22, color: "#16a34a" }}>{competitors.length * 9 - totalInnings}</div><div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700 }}>REMAINING</div></div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {standings.length >= 2 && standings[0].total > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 800, color: "#64748b", letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 10 }}>Points Gap</div>
+          <div style={{ ...card, marginBottom: 14, padding: "12px 14px" }}>
+            <div style={{ fontSize: 13, color: "#475569", marginBottom: 6 }}>
+              <b style={{ color: "#1e3a8a" }}>{standings[0].name}</b> leads by <b style={{ color: gap > 5 ? "#dc2626" : "#d97706" }}>{gap} pts</b> over {standings[1].name}
+            </div>
+            {standings.map((s, i) => {
+              const maxPts = standings[0].total || 1;
+              return (
+                <div key={s.id} style={{ marginBottom: i < standings.length - 1 ? 8 : 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>{s.name.split(" ")[0]}</span>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: "#1e3a8a" }}>{s.total}</span>
+                  </div>
+                  <div style={{ height: 8, borderRadius: 4, background: "#f1f5f9", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${(s.total / maxPts) * 100}%`, borderRadius: 4, background: i === 0 ? "#fbbf24" : i === 1 ? "#94a3b8" : i === 2 ? "#c2773f" : "#cbd5e1" }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ emoji, label, value, sub, color, accent }) {
+  return (
+    <div style={{ background: color, borderRadius: 14, padding: "12px 13px", border: `1px solid ${accent}33` }}>
+      <div style={{ fontSize: 22, marginBottom: 4 }}>{emoji}</div>
+      <div style={{ fontSize: 10, fontWeight: 800, color: accent, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 2 }}>{label}</div>
+      <div style={{ fontWeight: 800, fontSize: 15, color: "#0f172a", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</div>
+      <div style={{ fontSize: 11, color: "#64748b" }}>{sub}</div>
     </div>
   );
 }
