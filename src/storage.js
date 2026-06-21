@@ -21,8 +21,10 @@ export async function saveKey(key, value) {
       .from("scco_state")
       .upsert({ key, value: JSON.stringify(value) }, { onConflict: "key" });
     if (error) throw error;
+    return { ok: true };
   } catch (e) {
     console.error("saveKey failed", key, e);
+    return { ok: false, error: e };
   }
 }
 

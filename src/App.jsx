@@ -1,6 +1,27 @@
-import { useState, useEffect, useCallback } from "react";
-import { Trophy, Users, User, Plus, Medal, Trash2, ChevronRight, ChevronDown, X, Crown, Repeat, Coins, BarChart2, Settings } from "lucide-react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Trophy, Users, User, Plus, Medal, Trash2, ChevronRight, ChevronDown, X, Crown, Repeat, Coins, BarChart2, Settings, Wifi, WifiOff } from "lucide-react";
 import { loadKey, saveKey, subscribeToChanges } from "./storage";
+
+// ---- Toast ----
+function useToast() {
+  const [toast, setToast] = useState(null);
+  const timerRef = useRef(null);
+  const show = useCallback((type = "ok") => {
+    clearTimeout(timerRef.current);
+    setToast({ type });
+    timerRef.current = setTimeout(() => setToast(null), type === "ok" ? 1800 : 3500);
+  }, []);
+  return [toast, show];
+}
+function Toast({ toast }) {
+  if (!toast) return null;
+  const ok = toast.type === "ok";
+  return (
+    <div style={{ position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)", background: ok ? "#064e3b" : "#7f1d1d", color: ok ? "#d1fae5" : "#fee2e2", padding: "10px 20px", borderRadius: 24, fontSize: 14, fontWeight: 700, zIndex: 999, boxShadow: "0 4px 16px rgba(0,0,0,0.35)", whiteSpace: "nowrap", pointerEvents: "none" }}>
+      {ok ? "✓ Saved" : "⚠ Save failed — check connection"}
+    </div>
+  );
+}
 
 // ---- Scoring ----
 const DEFAULT_POINTS = { 1: 10, 2: 8, 3: 6, 4: 5, 5: 4, 6: 3 };
@@ -125,6 +146,10 @@ const KEYS = {
   events:      `scco:${YEAR}:events`,
   scheme:      `scco:${YEAR}:scheme`,
   golfCard:    (id) => `scco:${YEAR}:golf:${id}`,
+  rrMatch:     (evId, round) => `scco:${YEAR}:rr:${evId}:${round}`,
+  pokerEntry:  (evId, playerId) => `scco:${YEAR}:poker:${evId}:${playerId}`,
+  tennisMatch: (evId, matchKey) => `scco:${YEAR}:tennis:${evId}:${matchKey}`,
+  innings:     (evId, playerId) => `scco:${YEAR}:innings:${evId}:${playerId}`,
 };
 // Legacy keys from before year-scoping — used once to migrate data
 const LEGACY_KEYS = { competitors: "scco:competitors", teams: "scco:teams", events: "scco:events", scheme: "scco:scheme" };
@@ -138,6 +163,8 @@ export default function App() {
   const [scheme, setScheme] = useState(DEFAULT_POINTS);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("leaderboard");
+  const [online, setOnline] = useState(navigator.onLine);
+  const [toast, showToast] = useToast();
 
   const refresh = useCallback(async () => {
     const [c, t, e, s] = await Promise.all([loadKey(KEYS.competitors, []), loadKey(KEYS.teams, []), loadKey(KEYS.events, []), loadKey(KEYS.scheme, DEFAULT_POINTS)]);
@@ -202,6 +229,14 @@ export default function App() {
     return unsub;
   }, [refresh]);
 
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener("online", on);
+    window.addEventListener("offline", off);
+    return () => { window.removeEventListener("online", on); window.removeEventListener("offline", off); };
+  }, []);
+
   const derivedPlaces = {};
   for (const ev of events) {
     if (!ev.done) continue;
@@ -250,11 +285,17 @@ export default function App() {
         <TabBtn active={tab === "events"} onClick={() => setTab("events")} icon={<Medal size={15} />} label="Events" />
         <TabBtn active={tab === "analytics"} onClick={() => setTab("analytics")} icon={<BarChart2 size={15} />} label="Analytics" />
       </div>
+      {!online && (
+        <div style={{ background: "#7f1d1d", color: "#fecaca", fontSize: 13, fontWeight: 700, textAlign: "center", padding: "6px 14px", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <WifiOff size={14} /> No connection — changes won't save until you're back online
+        </div>
+      )}
       <div style={{ padding: "14px" }}>
         {tab === "leaderboard" && <Leaderboard standings={standings} events={events} competitors={competitors} />}
-        {tab === "events" && <Events events={events} setEvents={setEvents} competitors={competitors} teams={teams} scheme={scheme} />}
+        {tab === "events" && <Events events={events} setEvents={setEvents} competitors={competitors} teams={teams} scheme={scheme} showToast={showToast} />}
         {tab === "analytics" && <Analytics events={events} competitors={competitors} standings={standings} />}
       </div>
+      <Toast toast={toast} />
       {showSettings && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setShowSettings(false)}>
           <div style={{ background: "#fff", borderRadius: "20px 20px 0 0", padding: "20px 16px 36px", width: "100%", maxWidth: 760, boxSizing: "border-box" }} onClick={(e) => e.stopPropagation()}>
@@ -382,13 +423,14 @@ function Leaderboard({ standings, events, competitors }) {
 }
 
 // ============ EVENTS LIST ============
-function Events({ events, setEvents, competitors, teams, scheme }) {
+function Events({ events, setEvents, competitors, teams, scheme, showToast }) {
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("individual");
   const [newTheme, setNewTheme] = useState("poker");
   const [editing, setEditing] = useState(null);
-  const persist = async (next) => { setEvents(next); await saveKey(KEYS.events, next); };
+  const toast = (r) => { if (showToast) showToast(r?.ok === false ? "err" : "ok"); };
+  const persist = async (next) => { setEvents(next); toast(await saveKey(KEYS.events, next)); };
 
   const addEvent = async () => {
     if (!newName.trim()) return;
@@ -408,11 +450,11 @@ function Events({ events, setEvents, competitors, teams, scheme }) {
     const ev = events.find((e) => e.id === editing);
     if (!ev) { setEditing(null); return null; }
     const onSave = async (u) => { await persist(events.map((e) => (e.id === u.id ? u : e))); };
-    if (ev.type === "poker") return <PokerEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
-    if (ev.type === "innings") return <InningsEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
-    if (ev.type === "tournament") return <TennisEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
-    if (ev.type === "roundrobin") return <RoundRobinEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
-    if (ev.type === "golf") return <GolfEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
+    if (ev.type === "poker") return <PokerEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} showToast={showToast} />;
+    if (ev.type === "innings") return <InningsEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} showToast={showToast} />;
+    if (ev.type === "tournament") return <TennisEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} showToast={showToast} />;
+    if (ev.type === "roundrobin") return <RoundRobinEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} showToast={showToast} />;
+    if (ev.type === "golf") return <GolfEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} showToast={showToast} />;
     return <EventEditor ev={ev} competitors={competitors} teams={teams} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
   }
 
@@ -638,14 +680,40 @@ function BeerDieBackdrop() {
 }
 
 // ============ POKER EDITOR ============
-function PokerEditor({ ev, competitors, scheme, onBack, onSave }) {
+function PokerEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   const theme = getTheme("poker");
   const [ledger, setLedger] = useState(ev.ledger || {});
   const [players, setPlayers] = useState(ev.players && ev.players.length ? ev.players : competitors.map((c) => c.id));
   const [done, setDone] = useState(ev.done);
   const [editPlayers, setEditPlayers] = useState(false);
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
-  const setAmount = async (id, field, val) => { const nl = { ...ledger, [id]: { ...(ledger[id] || {}), [field]: val } }; setLedger(nl); await onSave({ ...ev, ledger: nl, players, done }); };
+
+  // Load per-player entries on mount and subscribe to realtime updates
+  useEffect(() => {
+    if (!ev.id) return;
+    (async () => {
+      const entries = await Promise.all(players.map((id) => loadKey(KEYS.pokerEntry(ev.id, id), null)));
+      const merged = { ...ev.ledger };
+      players.forEach((id, i) => { if (entries[i] != null) merged[id] = entries[i]; });
+      setLedger(merged);
+    })();
+    const unsub = subscribeToChanges((key) => {
+      if (key && key.startsWith(`scco:${YEAR}:poker:${ev.id}:`)) {
+        const playerId = key.replace(`scco:${YEAR}:poker:${ev.id}:`, "");
+        loadKey(key, null).then((entry) => { if (entry != null) setLedger((prev) => ({ ...prev, [playerId]: entry })); });
+      }
+    });
+    return unsub;
+  }, [ev.id]);
+
+  const setAmount = async (id, field, val) => {
+    const entry = { ...(ledger[id] || {}), [field]: val };
+    const nl = { ...ledger, [id]: entry };
+    setLedger(nl);
+    const r1 = await saveKey(KEYS.pokerEntry(ev.id, id), entry);
+    const r2 = await onSave({ ...ev, ledger: nl, players, done });
+    if (showToast) showToast(r1?.ok === false ? "err" : "ok");
+  };
   const togglePlayer = async (id) => { const np = players.includes(id) ? players.filter((x) => x !== id) : [...players, id]; setPlayers(np); await onSave({ ...ev, ledger, players: np, done }); };
   const toggleDone = async () => { const nd = !done; setDone(nd); await onSave({ ...ev, ledger, players, done: nd }); };
   const standings = computeLedgerStandings({ ledger, players });
@@ -721,14 +789,40 @@ function PokerEditor({ ev, competitors, scheme, onBack, onSave }) {
   );
 }
 // ============ 9/9/9 INNINGS EDITOR ============
-function InningsEditor({ ev, competitors, scheme, onBack, onSave }) {
+function InningsEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   const theme = getTheme("baseball");
   const [progress, setProgress] = useState(ev.progress || {});
   const [players, setPlayers] = useState(ev.players && ev.players.length ? ev.players : competitors.map((c) => c.id));
   const [done, setDone] = useState(ev.done);
   const [editPlayers, setEditPlayers] = useState(false);
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
-  const setInnings = async (id, val) => { const n = Math.max(0, Math.min(9, val)); const np = { ...progress, [id]: n }; setProgress(np); await onSave({ ...ev, progress: np, players, done }); };
+
+  // Load per-player innings on mount and subscribe to realtime updates
+  useEffect(() => {
+    if (!ev.id) return;
+    (async () => {
+      const vals = await Promise.all(players.map((id) => loadKey(KEYS.innings(ev.id, id), null)));
+      const merged = { ...ev.progress };
+      players.forEach((id, i) => { if (vals[i] != null) merged[id] = vals[i]; });
+      setProgress(merged);
+    })();
+    const unsub = subscribeToChanges((key) => {
+      if (key && key.startsWith(`scco:${YEAR}:innings:${ev.id}:`)) {
+        const playerId = key.replace(`scco:${YEAR}:innings:${ev.id}:`, "");
+        loadKey(key, null).then((v) => { if (v != null) setProgress((prev) => ({ ...prev, [playerId]: v })); });
+      }
+    });
+    return unsub;
+  }, [ev.id]);
+
+  const setInnings = async (id, val) => {
+    const n = Math.max(0, Math.min(9, val));
+    const np = { ...progress, [id]: n };
+    setProgress(np);
+    const r1 = await saveKey(KEYS.innings(ev.id, id), n);
+    const r2 = await onSave({ ...ev, progress: np, players, done });
+    if (showToast) showToast(r1?.ok === false ? "err" : "ok");
+  };
   const togglePlayer = async (id) => { const np = players.includes(id) ? players.filter((x) => x !== id) : [...players, id]; setPlayers(np); await onSave({ ...ev, progress, players: np, done }); };
   const toggleDone = async () => { const nd = !done; setDone(nd); await onSave({ ...ev, progress, players, done: nd }); };
   const standings = computeInningsStandings({ progress, players });
@@ -806,7 +900,7 @@ function InningsEditor({ ev, competitors, scheme, onBack, onSave }) {
 }
 
 // ============ TENNIS — SINGLES ROUND ROBIN EDITOR ============
-function TennisEditor({ ev, competitors, scheme, onBack, onSave }) {
+function TennisEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   const theme = getTheme("tennis");
   const [results, setResults] = useState(ev.results || {});
   const [players, setPlayers] = useState(ev.players && ev.players.length ? ev.players : competitors.map((c) => c.id));
@@ -816,10 +910,35 @@ function TennisEditor({ ev, competitors, scheme, onBack, onSave }) {
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
   const ready = players.length >= 2;
 
-  const setWinner = async (key, id) => {
+  // Load per-match keys on mount and subscribe to realtime updates
+  useEffect(() => {
+    if (!ev.id || !ready) return;
+    (async () => {
+      const pairs = tennisPairings(players);
+      const vals = await Promise.all(pairs.map((m) => loadKey(KEYS.tennisMatch(ev.id, m.key), null)));
+      const merged = { ...ev.results };
+      pairs.forEach((m, i) => { if (vals[i] != null) merged[m.key] = vals[i]; });
+      setResults(merged);
+    })();
+    const unsub = subscribeToChanges((key) => {
+      if (key && key.startsWith(`scco:${YEAR}:tennis:${ev.id}:`)) {
+        const matchKey = key.replace(`scco:${YEAR}:tennis:${ev.id}:`, "");
+        loadKey(key, null).then((v) => { if (v != null) setResults((prev) => ({ ...prev, [matchKey]: v })); });
+      }
+    });
+    return unsub;
+  }, [ev.id, ready]);
+
+  const setWinner = async (matchKey, id) => {
     const R = { ...results };
-    if (R[key] === id) delete R[key]; else R[key] = id;
-    setResults(R); await onSave({ ...ev, results: R, players, done });
+    if (R[matchKey] === id) delete R[matchKey]; else R[matchKey] = id;
+    setResults(R);
+    const val = R[matchKey] || null;
+    const r1 = val != null
+      ? await saveKey(KEYS.tennisMatch(ev.id, matchKey), val)
+      : await saveKey(KEYS.tennisMatch(ev.id, matchKey), null);
+    const r2 = await onSave({ ...ev, results: R, players, done });
+    if (showToast) showToast(r1?.ok === false ? "err" : "ok");
   };
   const toggleDone = async () => { const nd = !done; setDone(nd); await onSave({ ...ev, results, players, done: nd }); };
   const saveLineup = async () => { setPlayers(pick); setEditLineup(false); setResults({}); setDone(false); await onSave({ ...ev, players: pick, results: {}, done: false }); };
@@ -902,7 +1021,7 @@ function TennisEditor({ ev, competitors, scheme, onBack, onSave }) {
   );
 }
 // ============ ROUND ROBIN EDITOR (doubles) ============
-function RoundRobinEditor({ ev, competitors, scheme, onBack, onSave }) {
+function RoundRobinEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   const theme = getTheme(ev.theme);
   const [matches, setMatches] = useState(ev.matches || {});
   const [done, setDone] = useState(ev.done);
@@ -910,8 +1029,40 @@ function RoundRobinEditor({ ev, competitors, scheme, onBack, onSave }) {
   const [pick, setPick] = useState(ev.players || []);
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
   const ready = (ev.schedule || []).length > 0 && (ev.players || []).length === 5;
-  const persist = async (nextMatches, nextDone = done) => { setMatches(nextMatches); await onSave({ ...ev, matches: nextMatches, done: nextDone }); };
-  const setWinner = async (ri, w) => { const m = matches[ri] || {}; await persist({ ...matches, [ri]: { ...m, winner: m.winner === w ? null : w } }); };
+
+  // Load per-match keys on mount and subscribe to realtime updates
+  useEffect(() => {
+    if (!ev.id || !(ev.schedule || []).length) return;
+    (async () => {
+      const rounds = await Promise.all((ev.schedule || []).map((_, i) => loadKey(KEYS.rrMatch(ev.id, i), null)));
+      const merged = { ...ev.matches };
+      rounds.forEach((m, i) => { if (m != null) merged[i] = m; });
+      setMatches(merged);
+    })();
+    const unsub = subscribeToChanges((key) => {
+      if (key && key.startsWith(`scco:${YEAR}:rr:${ev.id}:`)) {
+        const round = parseInt(key.split(":").pop(), 10);
+        loadKey(key, null).then((m) => { if (m != null) setMatches((prev) => ({ ...prev, [round]: m })); });
+      }
+    });
+    return unsub;
+  }, [ev.id]);
+
+  const persist = async (nextMatches, nextDone = done) => {
+    setMatches(nextMatches);
+    await onSave({ ...ev, matches: nextMatches, done: nextDone });
+  };
+  const setWinner = async (ri, w) => {
+    const m = matches[ri] || {};
+    const next = { ...m, winner: m.winner === w ? null : w };
+    setMatches((prev) => ({ ...prev, [ri]: next }));
+    // per-match key for concurrent-safe writes
+    const r1 = await saveKey(KEYS.rrMatch(ev.id, ri), next);
+    // also snapshot on the event for standings / archiving
+    const nextMatches = { ...matches, [ri]: next };
+    const r2 = await onSave({ ...ev, matches: nextMatches, done });
+    if (showToast) showToast(r1?.ok === false || r2 === false ? "err" : "ok");
+  };
   const toggleDone = async () => { const nd = !done; setDone(nd); await onSave({ ...ev, matches, done: nd }); };
   const regenerate = async () => { if (!confirm("Rebuild the schedule with this lineup? Any recorded results will be cleared.")) return; await onSave({ ...ev, players: pick, schedule: genRoundRobin(pick) || [], matches: {}, done: false }); setMatches({}); setDone(false); setEditLineup(false); };
 
@@ -1153,7 +1304,7 @@ function ScoringEditor({ scheme, setScheme }) {
 }
 
 // ============ GOLF EDITOR ============
-function GolfEditor({ ev, competitors, scheme, onBack, onSave }) {
+function GolfEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   const theme = getTheme("golf");
   const [scores, setScores] = useState(ev.scores || {});
   const [players] = useState(ev.players && ev.players.length ? ev.players : competitors.map((c) => c.id));
@@ -1184,10 +1335,9 @@ function GolfEditor({ ev, competitors, scheme, onBack, onSave }) {
     const nextCard = { ...(scores[playerId] || {}), [hole]: cleaned };
     const next = { ...scores, [playerId]: nextCard };
     setScores(next);
-    // Save per-player card independently — no collision between simultaneous players
-    await saveKey(KEYS.golfCard(playerId), nextCard);
-    // Also keep a merged snapshot on the event for standings/archiving
+    const r1 = await saveKey(KEYS.golfCard(playerId), nextCard);
     await onSave({ ...ev, scores: next, players, done });
+    if (showToast) showToast(r1?.ok === false ? "err" : "ok");
   };
 
   const toggleDone = async () => { const nd = !done; setDone(nd); await onSave({ ...ev, scores, players, done: nd }); };
@@ -1215,39 +1365,37 @@ function GolfEditor({ ev, competitors, scheme, onBack, onSave }) {
         <div style={{ background: theme.panelBg, borderRadius: 20, padding: "18px 14px", boxShadow: "0 8px 24px rgba(0,0,0,0.2)", position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", inset: 0, opacity: 0.06, fontSize: 120, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>⛳</div>
           <div style={{ position: "relative" }}>
-            <div style={{ color: theme.text, fontWeight: 800, fontSize: 13, letterSpacing: 0.5, marginBottom: 12, opacity: 0.8 }}>FRONT NINE</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: 4, marginBottom: 10 }}>
-              {front.map((h) => (
-                <div key={h} style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: theme.text, opacity: 0.6, marginBottom: 3 }}>{h}</div>
-                  <input
-                    inputMode="numeric" value={card[h] ?? ""}
-                    onChange={(e) => setScore(view, h, e.target.value)}
-                    style={{ width: "100%", height: 38, borderRadius: 8, border: card[h] ? "2px solid rgba(22,101,52,0.5)" : "2px solid rgba(255,255,255,0.3)", background: card[h] ? "#fff" : "rgba(255,255,255,0.15)", textAlign: "center", fontSize: 16, fontWeight: 800, color: card[h] ? "#14532d" : "#fff", outline: "none", boxSizing: "border-box" }}
-                  />
+            <div style={{ color: theme.text, fontWeight: 800, fontSize: 13, letterSpacing: 0.5, marginBottom: 10, opacity: 0.8 }}>FRONT NINE</div>
+            {front.map((h) => {
+              const val = Number(card[h]) || 0;
+              return (
+                <div key={h} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: h < 9 ? "1px solid rgba(255,255,255,0.1)" : "none" }}>
+                  <div style={{ width: 22, fontSize: 12, fontWeight: 800, color: theme.text, opacity: 0.7 }}>H{h}</div>
+                  <button onPointerDown={(e) => { e.preventDefault(); setScore(view, h, val > 1 ? val - 1 : ""); }} style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 22, fontWeight: 300, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                  <div style={{ flex: 1, textAlign: "center", fontWeight: 900, fontSize: 22, color: card[h] ? "#fde68a" : "rgba(255,255,255,0.4)" }}>{card[h] ?? "—"}</div>
+                  <button onPointerDown={(e) => { e.preventDefault(); setScore(view, h, val + 1); }} style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 22, fontWeight: 300, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                 </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 18 }}>
+              );
+            })}
+            <div style={{ display: "flex", justifyContent: "flex-end", margin: "10px 0 18px" }}>
               <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "5px 12px", color: "#fff", fontWeight: 800, fontSize: 14 }}>
                 Front: <span style={{ color: "#fde68a" }}>{frontTotal || "—"}</span>
               </div>
             </div>
 
-            <div style={{ color: theme.text, fontWeight: 800, fontSize: 13, letterSpacing: 0.5, marginBottom: 12, opacity: 0.8 }}>BACK NINE</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: 4, marginBottom: 10 }}>
-              {back.map((h) => (
-                <div key={h} style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: theme.text, opacity: 0.6, marginBottom: 3 }}>{h}</div>
-                  <input
-                    inputMode="numeric" value={card[h] ?? ""}
-                    onChange={(e) => setScore(view, h, e.target.value)}
-                    style={{ width: "100%", height: 38, borderRadius: 8, border: card[h] ? "2px solid rgba(22,101,52,0.5)" : "2px solid rgba(255,255,255,0.3)", background: card[h] ? "#fff" : "rgba(255,255,255,0.15)", textAlign: "center", fontSize: 16, fontWeight: 800, color: card[h] ? "#14532d" : "#fff", outline: "none", boxSizing: "border-box" }}
-                  />
+            <div style={{ color: theme.text, fontWeight: 800, fontSize: 13, letterSpacing: 0.5, marginBottom: 10, opacity: 0.8 }}>BACK NINE</div>
+            {back.map((h) => {
+              const val = Number(card[h]) || 0;
+              return (
+                <div key={h} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 0", borderBottom: h < 18 ? "1px solid rgba(255,255,255,0.1)" : "none" }}>
+                  <div style={{ width: 22, fontSize: 12, fontWeight: 800, color: theme.text, opacity: 0.7 }}>H{h}</div>
+                  <button onPointerDown={(e) => { e.preventDefault(); setScore(view, h, val > 1 ? val - 1 : ""); }} style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 22, fontWeight: 300, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                  <div style={{ flex: 1, textAlign: "center", fontWeight: 900, fontSize: 22, color: card[h] ? "#fde68a" : "rgba(255,255,255,0.4)" }}>{card[h] ?? "—"}</div>
+                  <button onPointerDown={(e) => { e.preventDefault(); setScore(view, h, val + 1); }} style={{ width: 38, height: 38, borderRadius: 10, border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", fontSize: 22, fontWeight: 300, cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                 </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              );
+            })}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
               <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "5px 12px", color: "#fff", fontWeight: 800, fontSize: 14 }}>
                 Back: <span style={{ color: "#fde68a" }}>{backTotal || "—"}</span>
               </div>
