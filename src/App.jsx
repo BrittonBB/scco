@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Trophy, Users, User, Plus, Medal, Trash2, ChevronRight, ChevronDown, X, Crown, Repeat, Coins, BarChart2 } from "lucide-react";
+import { Trophy, Users, User, Plus, Medal, Trash2, ChevronRight, ChevronDown, X, Crown, Repeat, Coins, BarChart2, Settings } from "lucide-react";
 import { loadKey, saveKey, subscribeToChanges } from "./storage";
 
 // ---- Scoring ----
@@ -124,6 +124,7 @@ const KEYS = {
   teams:       `scco:${YEAR}:teams`,
   events:      `scco:${YEAR}:events`,
   scheme:      `scco:${YEAR}:scheme`,
+  golfCard:    (id) => `scco:${YEAR}:golf:${id}`,
 };
 // Legacy keys from before year-scoping — used once to migrate data
 const LEGACY_KEYS = { competitors: "scco:competitors", teams: "scco:teams", events: "scco:events", scheme: "scco:scheme" };
@@ -229,6 +230,8 @@ export default function App() {
     return { ...c, total, breakdown, events: breakdown.length };
   }).sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
 
+  const [showSettings, setShowSettings] = useState(false);
+
   if (loading) return <div style={{ minHeight: 480, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui" }}><div style={{ textAlign: "center", color: "#64748b" }}><Trophy size={32} style={{ marginBottom: 8 }} /><div>Loading the Games…</div></div></div>;
 
   return (
@@ -239,6 +242,7 @@ export default function App() {
             <div style={{ fontSize: 28, flexShrink: 0 }}>🏛️</div>
             <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, letterSpacing: 1.5, opacity: 0.8, fontWeight: 600 }}>SOUTH CAROLINA</div><div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1 }}>Small Claims Olympics</div></div>
           </div>
+          <button onClick={() => setShowSettings(true)} style={iconBtn}><Settings size={18} /></button>
         </div>
       </div>
       <div style={{ display: "flex", gap: 6, padding: "12px 14px 0", flexWrap: "wrap" }}>
@@ -251,6 +255,17 @@ export default function App() {
         {tab === "events" && <Events events={events} setEvents={setEvents} competitors={competitors} teams={teams} scheme={scheme} />}
         {tab === "analytics" && <Analytics events={events} competitors={competitors} standings={standings} />}
       </div>
+      {showSettings && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 100, display: "flex", alignItems: "flex-end", justifyContent: "center" }} onClick={() => setShowSettings(false)}>
+          <div style={{ background: "#fff", borderRadius: "20px 20px 0 0", padding: "20px 16px 36px", width: "100%", maxWidth: 760, boxSizing: "border-box" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>Scoring Settings</div>
+              <button onClick={() => setShowSettings(false)} style={iconBtnGray}><X size={18} /></button>
+            </div>
+            <ScoringEditor scheme={scheme} setScheme={setScheme} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -432,7 +447,7 @@ function Events({ events, setEvents, competitors, teams, scheme }) {
 
       {events.length === 0 && <Empty icon={<Medal size={28} />} title="No events yet" sub="Create your first event to begin scoring." />}
 
-      {events.map((ev) => {
+      {[...events].sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1)).map((ev) => {
         const t = getTheme(ev.theme);
         let meta;
         if (ev.type === "roundrobin") { const played = Object.values(ev.matches || {}).filter((m) => m && m.winner).length; meta = `Doubles round robin · ${t.label} · ${played}/${(ev.schedule || []).length} rounds`; }
@@ -1141,16 +1156,37 @@ function ScoringEditor({ scheme, setScheme }) {
 function GolfEditor({ ev, competitors, scheme, onBack, onSave }) {
   const theme = getTheme("golf");
   const [scores, setScores] = useState(ev.scores || {});
-  const [players, setPlayers] = useState(ev.players && ev.players.length ? ev.players : competitors.map((c) => c.id));
+  const [players] = useState(ev.players && ev.players.length ? ev.players : competitors.map((c) => c.id));
   const [done, setDone] = useState(ev.done);
   const [view, setView] = useState(null); // null = player list, playerId = that player's scorecard
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
   const HOLES = Array.from({ length: 18 }, (_, i) => i + 1);
 
+  // Load all per-player cards on mount and subscribe to realtime changes
+  useEffect(() => {
+    (async () => {
+      const cards = await Promise.all(players.map((id) => loadKey(KEYS.golfCard(id), {})));
+      const merged = {};
+      players.forEach((id, i) => { if (Object.keys(cards[i]).length) merged[id] = cards[i]; });
+      if (Object.keys(merged).length) setScores(merged);
+    })();
+    const unsub = subscribeToChanges((key) => {
+      if (key && key.startsWith(`scco:${YEAR}:golf:`)) {
+        const playerId = key.replace(`scco:${YEAR}:golf:`, "");
+        loadKey(key, {}).then((card) => setScores((prev) => ({ ...prev, [playerId]: card })));
+      }
+    });
+    return unsub;
+  }, []);
+
   const setScore = async (playerId, hole, val) => {
     const cleaned = val === "" ? null : Math.max(1, parseInt(val) || 1);
-    const next = { ...scores, [playerId]: { ...(scores[playerId] || {}), [hole]: cleaned } };
+    const nextCard = { ...(scores[playerId] || {}), [hole]: cleaned };
+    const next = { ...scores, [playerId]: nextCard };
     setScores(next);
+    // Save per-player card independently — no collision between simultaneous players
+    await saveKey(KEYS.golfCard(playerId), nextCard);
+    // Also keep a merged snapshot on the event for standings/archiving
     await onSave({ ...ev, scores: next, players, done });
   };
 
