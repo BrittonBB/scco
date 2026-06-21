@@ -60,6 +60,30 @@ function computeInningsStandings(ev) {
   arr.forEach((s) => { seen++; if (s.innings !== prev) { place = seen; prev = s.innings; } s.place = place; });
   return arr;
 }
+function computeGolfStandings(ev) {
+  const players = ev.players && ev.players.length ? ev.players : [];
+  const arr = players.map((id) => {
+    const card = (ev.scores || {})[id] || {};
+    const holesPlayed = Object.keys(card).filter((h) => card[h] != null && card[h] !== "").length;
+    const total = Object.values(card).reduce((s, v) => s + (Number(v) || 0), 0);
+    return { id, total, holesPlayed };
+  });
+  arr.sort((a, b) => {
+    if (a.holesPlayed === 0 && b.holesPlayed === 0) return 0;
+    if (a.holesPlayed === 0) return 1;
+    if (b.holesPlayed === 0) return -1;
+    return a.total - b.total || b.holesPlayed - a.holesPlayed;
+  });
+  let place = 0, prev = null, seen = 0;
+  arr.forEach((s) => {
+    seen++;
+    const key = s.holesPlayed > 0 ? s.total + "/" + s.holesPlayed : "none";
+    if (key !== prev) { place = seen; prev = key; }
+    s.place = s.holesPlayed > 0 ? place : 99;
+  });
+  return arr;
+}
+
 const pairKey = (a, b) => [a, b].slice().sort().join("|");
 function tennisPairings(players) {
   const ps = players || []; const out = [];
@@ -185,13 +209,14 @@ export default function App() {
     else if (ev.type === "poker") st = computeLedgerStandings(ev);
     else if (ev.type === "innings") st = computeInningsStandings(ev);
     else if (ev.type === "tournament") st = computeTennisStandings(ev);
+    else if (ev.type === "golf") st = computeGolfStandings(ev).filter((s) => s.place !== 99);
     if (st) derivedPlaces[ev.id] = Object.fromEntries(st.map((s) => [s.id, s.place]));
   }
 
   const standings = competitors.map((c) => {
     const breakdown = []; let total = 0;
     for (const ev of events) {
-      if (ev.type === "roundrobin" || ev.type === "poker" || ev.type === "innings" || ev.type === "tournament") {
+      if (ev.type === "roundrobin" || ev.type === "poker" || ev.type === "innings" || ev.type === "tournament" || ev.type === "golf") {
         const place = derivedPlaces[ev.id]?.[c.id];
         if (place != null) { const pts = pointsForPlace(place, scheme); total += pts; breakdown.push({ event: ev.name, theme: ev.theme, place, pts }); }
       } else {
@@ -357,6 +382,7 @@ function Events({ events, setEvents, competitors, teams, scheme }) {
     else if (newType === "poker") { ev = { id: uid(), name: newName.trim(), type: "poker", theme: "poker", players: competitors.map((c) => c.id), ledger: {}, done: false }; }
     else if (newType === "innings") { ev = { id: uid(), name: newName.trim(), type: "innings", theme: "baseball", players: competitors.map((c) => c.id), progress: {}, done: false }; }
     else if (newType === "tournament") { ev = { id: uid(), name: newName.trim(), type: "tournament", theme: "tennis", players: competitors.map((c) => c.id), results: {}, done: false }; }
+    else if (newType === "golf") { ev = { id: uid(), name: newName.trim(), type: "golf", theme: "golf", players: competitors.map((c) => c.id), scores: {}, done: false }; }
     else { ev = { id: uid(), name: newName.trim(), type: newType, theme: newTheme, results: [], done: false }; }
     await persist([...events, ev]);
     setNewName(""); setNewType("individual"); setNewTheme("poker"); setShowNew(false); setEditing(ev.id);
@@ -371,6 +397,7 @@ function Events({ events, setEvents, competitors, teams, scheme }) {
     if (ev.type === "innings") return <InningsEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
     if (ev.type === "tournament") return <TennisEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
     if (ev.type === "roundrobin") return <RoundRobinEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
+    if (ev.type === "golf") return <GolfEditor ev={ev} competitors={competitors} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
     return <EventEditor ev={ev} competitors={competitors} teams={teams} scheme={scheme} onBack={() => setEditing(null)} onSave={onSave} />;
   }
 
@@ -388,12 +415,14 @@ function Events({ events, setEvents, competitors, teams, scheme }) {
             <TypeChip active={newType === "poker"} onClick={() => { setNewType("poker"); setNewTheme("poker"); }} icon={<Coins size={14} />} label="Poker $" />
             <TypeChip active={newType === "innings"} onClick={() => { setNewType("innings"); setNewTheme("baseball"); }} icon={<span style={{ fontSize: 15 }}>⚾</span>} label="9/9/9" />
             <TypeChip active={newType === "tournament"} onClick={() => { setNewType("tournament"); setNewTheme("tennis"); }} icon={<span style={{ fontSize: 15 }}>🎾</span>} label="Tennis RR" />
+            <TypeChip active={newType === "golf"} onClick={() => { setNewType("golf"); setNewTheme("golf"); }} icon={<span style={{ fontSize: 15 }}>⛳</span>} label="Golf" />
           </div>
           {newType === "roundrobin" && <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>Rotating-partner doubles, tuned for 5 players. You'll set the lineup inside.</div>}
           {newType === "poker" && <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>Cash game: track buy-ins and final stacks. Net winnings set the finishing order.</div>}
           {newType === "innings" && <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>A hot dog and a beer every inning. Score is innings completed, out of 9.</div>}
           {newType === "tournament" && <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>Singles round robin — everyone plays everyone once. Fairest format; 5 players = 10 matches.</div>}
-          {newType !== "poker" && newType !== "innings" && newType !== "tournament" && (<><div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.5, margin: "4px 0 6px" }}>THEME</div><ThemePicker value={newTheme} onChange={setNewTheme} /></>)}
+          {newType === "golf" && <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>18-hole stroke play. Each player enters their own scorecard hole by hole. Lowest total wins.</div>}
+          {newType !== "poker" && newType !== "innings" && newType !== "tournament" && newType !== "golf" && (<><div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", letterSpacing: 0.5, margin: "4px 0 6px" }}>THEME</div><ThemePicker value={newTheme} onChange={setNewTheme} /></>)}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
             <button onClick={addEvent} style={{ ...primaryBtn, flex: 1, marginBottom: 0 }}>Create</button>
             <button onClick={() => { setShowNew(false); setNewName(""); }} style={ghostBtn}>Cancel</button>
@@ -410,6 +439,7 @@ function Events({ events, setEvents, competitors, teams, scheme }) {
         else if (ev.type === "poker") { const totalIn = (ev.players || []).reduce((s, id) => s + (Number((ev.ledger || {})[id]?.buyIn) || 0), 0); meta = `Poker cash game · ${(ev.players || []).length} players · $${totalIn} in`; }
         else if (ev.type === "innings") { const tops = (ev.players || []).map((id) => Number((ev.progress || {})[id]) || 0); const lead = tops.length ? Math.max(...tops) : 0; meta = `Hot dog & beer · ${(ev.players || []).length} players · top ${lead}/9`; }
         else if (ev.type === "tournament") { const st = computeTennisStandings(ev); const played = Object.values(ev.results || {}).filter(Boolean).length; const totalM = tennisPairings(ev.players || []).length; const champ = ev.done && st[0] ? competitors.find((c) => c.id === st[0].id)?.name : null; meta = `Tennis round robin · ${(ev.players || []).length} players · ${champ ? "🏆 " + champ : played + "/" + totalM + " matches"}`; }
+        else if (ev.type === "golf") { const st = computeGolfStandings(ev); const leader = st.find((s) => s.holesPlayed > 0); const holesIn = leader ? leader.holesPlayed : 0; meta = `Stroke play · ${(ev.players || []).length} players · ${holesIn}/18 holes`; }
         else meta = `${ev.type === "team" ? "Team event" : "Individual"} · ${t.label} · ${ev.results.length} placement${ev.results.length !== 1 ? "s" : ""}`;
         return (
           <div key={ev.id} style={{ ...card, marginBottom: 10, display: "flex", alignItems: "center", gap: 12 }}>
@@ -1103,6 +1133,147 @@ function ScoringEditor({ scheme, setScheme }) {
         </div>
       ))}
       <button onClick={save} style={{ ...primaryBtn, width: "100%", marginTop: 8, justifyContent: "center" }}>Save scoring</button>
+    </div>
+  );
+}
+
+// ============ GOLF EDITOR ============
+function GolfEditor({ ev, competitors, scheme, onBack, onSave }) {
+  const theme = getTheme("golf");
+  const [scores, setScores] = useState(ev.scores || {});
+  const [players, setPlayers] = useState(ev.players && ev.players.length ? ev.players : competitors.map((c) => c.id));
+  const [done, setDone] = useState(ev.done);
+  const [view, setView] = useState(null); // null = player list, playerId = that player's scorecard
+  const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
+  const HOLES = Array.from({ length: 18 }, (_, i) => i + 1);
+
+  const setScore = async (playerId, hole, val) => {
+    const cleaned = val === "" ? null : Math.max(1, parseInt(val) || 1);
+    const next = { ...scores, [playerId]: { ...(scores[playerId] || {}), [hole]: cleaned } };
+    setScores(next);
+    await onSave({ ...ev, scores: next, players, done });
+  };
+
+  const toggleDone = async () => { const nd = !done; setDone(nd); await onSave({ ...ev, scores, players, done: nd }); };
+
+  const standings = computeGolfStandings({ players, scores });
+  const tcard = { background: "#fff", border: "1px solid rgba(22,101,52,0.2)", borderRadius: 13, boxShadow: "0 3px 10px rgba(0,0,0,0.1)" };
+
+  // ---- Scorecard view ----
+  if (view) {
+    const card = scores[view] || {};
+    const front = HOLES.slice(0, 9);
+    const back = HOLES.slice(9, 18);
+    const frontTotal = front.reduce((s, h) => s + (Number(card[h]) || 0), 0);
+    const backTotal = back.reduce((s, h) => s + (Number(card[h]) || 0), 0);
+    const grandTotal = frontTotal + backTotal;
+    const holesPlayed = HOLES.filter((h) => card[h] != null).length;
+
+    return (
+      <div>
+        <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => setView(null)} style={{ ...ghostBtn, padding: "6px 12px" }}>← Back</button>
+          <div style={{ fontWeight: 800, fontSize: 17 }}>{nameOf(view)}</div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginLeft: "auto" }}>{holesPlayed}/18 holes</div>
+        </div>
+        <div style={{ background: theme.panelBg, borderRadius: 20, padding: "18px 14px", boxShadow: "0 8px 24px rgba(0,0,0,0.2)", position: "relative", overflow: "hidden" }}>
+          <div style={{ position: "absolute", inset: 0, opacity: 0.06, fontSize: 120, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>⛳</div>
+          <div style={{ position: "relative" }}>
+            <div style={{ color: theme.text, fontWeight: 800, fontSize: 13, letterSpacing: 0.5, marginBottom: 12, opacity: 0.8 }}>FRONT NINE</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: 4, marginBottom: 10 }}>
+              {front.map((h) => (
+                <div key={h} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: theme.text, opacity: 0.6, marginBottom: 3 }}>{h}</div>
+                  <input
+                    inputMode="numeric" value={card[h] ?? ""}
+                    onChange={(e) => setScore(view, h, e.target.value)}
+                    style={{ width: "100%", height: 38, borderRadius: 8, border: card[h] ? "2px solid rgba(22,101,52,0.5)" : "2px solid rgba(255,255,255,0.3)", background: card[h] ? "#fff" : "rgba(255,255,255,0.15)", textAlign: "center", fontSize: 16, fontWeight: 800, color: card[h] ? "#14532d" : "#fff", outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 18 }}>
+              <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "5px 12px", color: "#fff", fontWeight: 800, fontSize: 14 }}>
+                Front: <span style={{ color: "#fde68a" }}>{frontTotal || "—"}</span>
+              </div>
+            </div>
+
+            <div style={{ color: theme.text, fontWeight: 800, fontSize: 13, letterSpacing: 0.5, marginBottom: 12, opacity: 0.8 }}>BACK NINE</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: 4, marginBottom: 10 }}>
+              {back.map((h) => (
+                <div key={h} style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: theme.text, opacity: 0.6, marginBottom: 3 }}>{h}</div>
+                  <input
+                    inputMode="numeric" value={card[h] ?? ""}
+                    onChange={(e) => setScore(view, h, e.target.value)}
+                    style={{ width: "100%", height: 38, borderRadius: 8, border: card[h] ? "2px solid rgba(22,101,52,0.5)" : "2px solid rgba(255,255,255,0.3)", background: card[h] ? "#fff" : "rgba(255,255,255,0.15)", textAlign: "center", fontSize: 16, fontWeight: 800, color: card[h] ? "#14532d" : "#fff", outline: "none", boxSizing: "border-box" }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: 8, padding: "5px 12px", color: "#fff", fontWeight: 800, fontSize: 14 }}>
+                Back: <span style={{ color: "#fde68a" }}>{backTotal || "—"}</span>
+              </div>
+              <div style={{ background: "rgba(0,0,0,0.35)", borderRadius: 8, padding: "6px 14px", color: "#fde68a", fontWeight: 900, fontSize: 16 }}>
+                Total: {grandTotal || "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+        <button onClick={() => setView(null)} style={{ ...ghostBtn, width: "100%", marginTop: 14, textAlign: "center" }}>← Back to scoreboard</button>
+      </div>
+    );
+  }
+
+  // ---- Player list view ----
+  return (
+    <div>
+      <EditorTopBar onBack={onBack} />
+      <div style={{ background: theme.panelBg, borderRadius: 20, padding: "18px 14px 16px", boxShadow: "0 8px 24px rgba(0,0,0,0.2)", position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", inset: 0, opacity: 0.06, fontSize: 120, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>⛳</div>
+        <div style={{ position: "relative" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <span style={{ fontSize: 24 }}>⛳</span>
+            <h2 style={{ margin: 0, fontSize: 22, color: theme.text }}>{ev.name}</h2>
+            <span style={badge("rgba(0,0,0,0.18)", theme.text)}>STROKE PLAY</span>
+            {done && <span style={badge("rgba(255,255,255,0.25)", theme.text)}>FINAL</span>}
+          </div>
+          <div style={{ fontSize: 12.5, color: theme.text, opacity: 0.8, marginBottom: 16 }}>18 holes · tap your name to enter your scorecard</div>
+
+          {standings.map((s, i) => {
+            const playerCard = scores[s.id] || {};
+            const holesPlayed = HOLES.filter((h) => playerCard[h] != null).length;
+            const front = HOLES.slice(0, 9).reduce((t, h) => t + (Number(playerCard[h]) || 0), 0);
+            const back = HOLES.slice(9).reduce((t, h) => t + (Number(playerCard[h]) || 0), 0);
+            const hasScores = holesPlayed > 0;
+            return (
+              <div key={s.id} onClick={() => setView(s.id)} style={{ ...tcard, padding: "12px 14px", marginBottom: 8, cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 28, textAlign: "center", fontSize: 16, fontWeight: 800, color: i < 3 && hasScores ? ["#b45309","#64748b","#92400e"][i] : "#94a3b8" }}>
+                  {i < 3 && hasScores ? ["🥇","🥈","🥉"][i] : <span style={{ fontWeight: 700, color: "#94a3b8" }}>{i + 1}</span>}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{nameOf(s.id)}</div>
+                  {hasScores
+                    ? <div style={{ fontSize: 11, color: "#64748b" }}>F9: {front || "—"} · B9: {back || "—"} · {holesPlayed}/18 holes</div>
+                    : <div style={{ fontSize: 11, color: "#94a3b8" }}>Tap to enter scorecard</div>}
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  {hasScores && <div style={{ fontWeight: 900, fontSize: 22, color: "#14532d" }}>{s.total}</div>}
+                  {!hasScores && <div style={{ fontSize: 22 }}>📝</div>}
+                  <div style={{ fontSize: 10, color: "#94a3b8" }}>{hasScores ? "strokes" : ""}</div>
+                </div>
+                <ChevronRight size={16} color="#94a3b8" />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {players.length > 0 && (
+        <button onClick={toggleDone} style={{ ...(done ? ghostBtn : primaryBtn), width: "100%", marginTop: 14, justifyContent: "center" }}>
+          {done ? "Reopen event" : "Mark event final"}
+        </button>
+      )}
     </div>
   );
 }
