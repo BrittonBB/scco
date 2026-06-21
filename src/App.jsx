@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Trophy, Users, User, Plus, Medal, Trash2, ChevronRight, ChevronDown, RefreshCw, X, Crown, Repeat, Coins, BarChart2 } from "lucide-react";
+import { Trophy, Users, User, Plus, Medal, Trash2, ChevronRight, ChevronDown, X, Crown, Repeat, Coins, BarChart2 } from "lucide-react";
 import { loadKey, saveKey, subscribeToChanges } from "./storage";
 
 // ---- Scoring ----
@@ -105,7 +105,6 @@ export default function App() {
   const [scheme, setScheme] = useState(DEFAULT_POINTS);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("leaderboard");
-  const [syncing, setSyncing] = useState(false);
 
   const refresh = useCallback(async () => {
     const [c, t, e, s] = await Promise.all([loadKey(KEYS.competitors, []), loadKey(KEYS.teams, []), loadKey(KEYS.events, []), loadKey(KEYS.scheme, DEFAULT_POINTS)]);
@@ -114,33 +113,35 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      await refresh();
+      // Load existing data first — never overwrite what's already there
       let curr = await loadKey(KEYS.competitors, []);
       const have = new Set(curr.map((c) => c.name.trim().toLowerCase()));
       const missing = SEED_NAMES.filter((n) => !have.has(n.toLowerCase()));
       if (missing.length) { curr = [...curr, ...missing.map((n) => ({ id: uid(), name: n }))]; await saveKey(KEYS.competitors, curr); }
       setCompetitors(curr);
 
+      const [t, s] = await Promise.all([loadKey(KEYS.teams, []), loadKey(KEYS.scheme, DEFAULT_POINTS)]);
+      setTeams(t); setScheme(s);
+
       let ev = await loadKey(KEYS.events, null);
-      if (ev == null) ev = [{ id: uid(), name: "Poker", type: "individual", theme: "poker", results: [], done: false }];
-      else ev = ev.map((e) => (e.theme ? e : { ...e, theme: e.name.toLowerCase().includes("poker") ? "poker" : "default" }));
-      ev = ev.map((e) => (e.name.toLowerCase() === "poker" && e.type !== "poker"
-        ? { id: e.id, name: e.name, type: "poker", theme: "poker", players: curr.map((c) => c.id), ledger: {}, done: false } : e));
-      ev = ev.map((e) => (e.type === "tournament" && e.seeds ? { id: e.id, name: e.name, type: "tournament", theme: "tennis", players: e.seeds, results: {}, done: false } : e));
       const fiveIds = SEED_NAMES.map((n) => curr.find((c) => c.name.toLowerCase() === n.toLowerCase())?.id).filter(Boolean);
-      if (!ev.some((e) => e.name.toLowerCase() === "spikeball"))
-        ev = [...ev, { id: uid(), name: "Spikeball", type: "roundrobin", theme: "spikeball", players: fiveIds, schedule: genRoundRobin(fiveIds) || [], matches: {}, done: false }];
-      if (!ev.some((e) => e.name === "9/9/9"))
-        ev = [...ev, { id: uid(), name: "9/9/9", type: "innings", theme: "baseball", players: curr.map((c) => c.id), progress: {}, done: false }];
-      if (!ev.some((e) => e.name.toLowerCase() === "tennis"))
-        ev = [...ev, { id: uid(), name: "Tennis", type: "tournament", theme: "tennis", players: fiveIds, results: {}, done: false }];
-      if (!ev.some((e) => e.name.toLowerCase() === "beer die"))
-        ev = [...ev, { id: uid(), name: "Beer Die", type: "roundrobin", theme: "beerdie", players: fiveIds, schedule: genRoundRobin(fiveIds) || [], matches: {}, done: false }];
-      await saveKey(KEYS.events, ev);
+
+      if (ev == null) {
+        // Brand new — seed all events
+        ev = [
+          { id: uid(), name: "Poker", type: "poker", theme: "poker", players: curr.map((c) => c.id), ledger: {}, done: false },
+          { id: uid(), name: "Spikeball", type: "roundrobin", theme: "spikeball", players: fiveIds, schedule: genRoundRobin(fiveIds) || [], matches: {}, done: false },
+          { id: uid(), name: "9/9/9", type: "innings", theme: "baseball", players: curr.map((c) => c.id), progress: {}, done: false },
+          { id: uid(), name: "Tennis", type: "tournament", theme: "tennis", players: fiveIds, results: {}, done: false },
+          { id: uid(), name: "Beer Die", type: "roundrobin", theme: "beerdie", players: fiveIds, schedule: genRoundRobin(fiveIds) || [], matches: {}, done: false },
+        ];
+        await saveKey(KEYS.events, ev);
+      }
+      // Never touch existing events on reload — just display them as-is
       setEvents(ev);
       setLoading(false);
     })();
-  }, [refresh]);
+  }, []);
 
   useEffect(() => {
     const unsub = subscribeToChanges((key) => {
@@ -148,8 +149,6 @@ export default function App() {
     });
     return unsub;
   }, [refresh]);
-
-  const manualSync = async () => { setSyncing(true); await refresh(); setTimeout(() => setSyncing(false), 400); };
 
   const derivedPlaces = {};
   for (const ev of events) {
@@ -188,7 +187,6 @@ export default function App() {
             <div style={{ fontSize: 28, flexShrink: 0 }}>🏛️</div>
             <div style={{ minWidth: 0 }}><div style={{ fontSize: 11, letterSpacing: 1.5, opacity: 0.8, fontWeight: 600 }}>SOUTH CAROLINA</div><div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.1 }}>Small Claims Olympics</div></div>
           </div>
-          <button onClick={manualSync} title="Sync" style={iconBtn}><RefreshCw size={18} style={{ animation: syncing ? "spin 0.6s linear" : "none" }} /></button>
         </div>
       </div>
       <div style={{ display: "flex", gap: 6, padding: "12px 14px 0", flexWrap: "wrap" }}>
@@ -201,7 +199,6 @@ export default function App() {
         {tab === "events" && <Events events={events} setEvents={setEvents} competitors={competitors} teams={teams} scheme={scheme} />}
         {tab === "analytics" && <Analytics events={events} competitors={competitors} standings={standings} />}
       </div>
-      <style>{`@keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
