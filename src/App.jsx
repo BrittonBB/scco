@@ -223,8 +223,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    // Only refresh the top-level state for keys that affect the main collections.
+    // Per-entity keys (golf:, rr:, poker:, innings:, tennis:) are merged locally by
+    // each editor's useEffect — triggering a full refresh on those would race against
+    // the editor's in-flight state updates and cause blank renders.
+    const TOP_LEVEL_PREFIXES = [
+      KEYS.events, KEYS.competitors, KEYS.teams, KEYS.scheme,
+    ];
     const unsub = subscribeToChanges((key) => {
-      if (key) refresh();
+      if (key && TOP_LEVEL_PREFIXES.some((k) => key === k)) refresh();
     });
     return unsub;
   }, [refresh]);
@@ -688,7 +695,7 @@ function PokerEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   const [editPlayers, setEditPlayers] = useState(false);
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
 
-  // Load per-player entries on mount and subscribe to realtime updates
+  // Merge any per-player entries written by other devices
   useEffect(() => {
     if (!ev.id) return;
     (async () => {
@@ -697,13 +704,6 @@ function PokerEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
       players.forEach((id, i) => { if (entries[i] != null) merged[id] = entries[i]; });
       setLedger(merged);
     })();
-    const unsub = subscribeToChanges((key) => {
-      if (key && key.startsWith(`scco:${YEAR}:poker:${ev.id}:`)) {
-        const playerId = key.replace(`scco:${YEAR}:poker:${ev.id}:`, "");
-        loadKey(key, null).then((entry) => { if (entry != null) setLedger((prev) => ({ ...prev, [playerId]: entry })); });
-      }
-    });
-    return unsub;
   }, [ev.id]);
 
   const setAmount = async (id, field, val) => {
@@ -797,7 +797,7 @@ function InningsEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   const [editPlayers, setEditPlayers] = useState(false);
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
 
-  // Load per-player innings on mount and subscribe to realtime updates
+  // Merge any per-player innings written by other devices
   useEffect(() => {
     if (!ev.id) return;
     (async () => {
@@ -806,13 +806,6 @@ function InningsEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
       players.forEach((id, i) => { if (vals[i] != null) merged[id] = vals[i]; });
       setProgress(merged);
     })();
-    const unsub = subscribeToChanges((key) => {
-      if (key && key.startsWith(`scco:${YEAR}:innings:${ev.id}:`)) {
-        const playerId = key.replace(`scco:${YEAR}:innings:${ev.id}:`, "");
-        loadKey(key, null).then((v) => { if (v != null) setProgress((prev) => ({ ...prev, [playerId]: v })); });
-      }
-    });
-    return unsub;
   }, [ev.id]);
 
   const setInnings = async (id, val) => {
@@ -910,7 +903,7 @@ function TennisEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
   const ready = players.length >= 2;
 
-  // Load per-match keys on mount and subscribe to realtime updates
+  // Merge any per-match results written by other devices
   useEffect(() => {
     if (!ev.id || !ready) return;
     (async () => {
@@ -920,13 +913,6 @@ function TennisEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
       pairs.forEach((m, i) => { if (vals[i] != null) merged[m.key] = vals[i]; });
       setResults(merged);
     })();
-    const unsub = subscribeToChanges((key) => {
-      if (key && key.startsWith(`scco:${YEAR}:tennis:${ev.id}:`)) {
-        const matchKey = key.replace(`scco:${YEAR}:tennis:${ev.id}:`, "");
-        loadKey(key, null).then((v) => { if (v != null) setResults((prev) => ({ ...prev, [matchKey]: v })); });
-      }
-    });
-    return unsub;
   }, [ev.id, ready]);
 
   const setWinner = async (matchKey, id) => {
@@ -1030,7 +1016,7 @@ function RoundRobinEditor({ ev, competitors, scheme, onBack, onSave, showToast }
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
   const ready = (ev.schedule || []).length > 0 && (ev.players || []).length === 5;
 
-  // Load per-match keys on mount and subscribe to realtime updates
+  // Merge any per-match results written by other devices
   useEffect(() => {
     if (!ev.id || !(ev.schedule || []).length) return;
     (async () => {
@@ -1039,13 +1025,6 @@ function RoundRobinEditor({ ev, competitors, scheme, onBack, onSave, showToast }
       rounds.forEach((m, i) => { if (m != null) merged[i] = m; });
       setMatches(merged);
     })();
-    const unsub = subscribeToChanges((key) => {
-      if (key && key.startsWith(`scco:${YEAR}:rr:${ev.id}:`)) {
-        const round = parseInt(key.split(":").pop(), 10);
-        loadKey(key, null).then((m) => { if (m != null) setMatches((prev) => ({ ...prev, [round]: m })); });
-      }
-    });
-    return unsub;
   }, [ev.id]);
 
   const persist = async (nextMatches, nextDone = done) => {

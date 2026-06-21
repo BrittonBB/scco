@@ -28,9 +28,11 @@ export async function saveKey(key, value) {
   }
 }
 
+let _channelCounter = 0;
 export function subscribeToChanges(onUpdate) {
+  const name = "scco_state_changes_" + (++_channelCounter);
   const channel = supabase
-    .channel("scco_state_changes")
+    .channel(name)
     .on(
       "postgres_changes",
       { event: "*", schema: "public", table: "scco_state" },
