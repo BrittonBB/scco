@@ -236,7 +236,7 @@ export default function App() {
 
   return (
     <div style={{ fontFamily: "-apple-system, system-ui, sans-serif", maxWidth: 760, margin: "0 auto", color: "#0f172a", paddingBottom: 40, width: "100%" }}>
-      <div style={{ background: "linear-gradient(135deg,#1e3a8a,#3b0764)", color: "white", padding: "20px 18px 16px", borderRadius: "0 0 18px 18px" }}>
+      <div style={{ background: "linear-gradient(135deg,#1e3a8a,#3b0764)", color: "white", padding: "calc(env(safe-area-inset-top, 0px) + 20px) 18px 16px", borderRadius: "0 0 18px 18px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, overflow: "hidden" }}>
             <div style={{ fontSize: 28, flexShrink: 0 }}>🏛️</div>
