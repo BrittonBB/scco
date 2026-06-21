@@ -976,8 +976,8 @@ function RoundRobinEditor({ ev, competitors, scheme, onBack, onSave }) {
 }
 function TeamRow({ label, names, win, onWin }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 9, background: win ? "#ecfdf5" : "#f8fafc", border: win ? "1.5px solid #34d399" : "1.5px solid transparent" }}>
-      <button onClick={onWin} style={{ width: 28, height: 28, borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 800, fontSize: 12, background: win ? "#10b981" : "#e2e8f0", color: win ? "white" : "#94a3b8" }}>{win ? "✓" : label}</button>
+    <div onClick={onWin} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 9, cursor: "pointer", background: win ? "#ecfdf5" : "#f8fafc", border: win ? "1.5px solid #34d399" : "1.5px solid transparent" }}>
+      <div style={{ width: 28, height: 28, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12, background: win ? "#10b981" : "#e2e8f0", color: win ? "white" : "#94a3b8", flexShrink: 0 }}>{win ? "✓" : label}</div>
       <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: "#1e293b" }}>{names.join(" + ")}</div>
       {win && <span style={{ fontSize: 11, fontWeight: 800, color: "#16a34a", letterSpacing: 0.5 }}>WIN</span>}
     </div>
