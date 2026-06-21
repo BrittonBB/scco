@@ -693,6 +693,7 @@ function PokerEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   const [players, setPlayers] = useState(ev.players && ev.players.length ? ev.players : competitors.map((c) => c.id));
   const [done, setDone] = useState(ev.done);
   const [editPlayers, setEditPlayers] = useState(false);
+  const [bulkBuyIn, setBulkBuyIn] = useState("");
   const nameOf = (id) => competitors.find((c) => c.id === id)?.name || "(removed)";
 
   // Merge any per-player entries written by other devices
@@ -716,6 +717,17 @@ function PokerEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
   };
   const togglePlayer = async (id) => { const np = players.includes(id) ? players.filter((x) => x !== id) : [...players, id]; setPlayers(np); await onSave({ ...ev, ledger, players: np, done }); };
   const toggleDone = async () => { const nd = !done; setDone(nd); await onSave({ ...ev, ledger, players, done: nd }); };
+  const applyBulkBuyIn = async () => {
+    const amt = bulkBuyIn.trim();
+    if (!amt || isNaN(Number(amt)) || Number(amt) <= 0 || !players.length) return;
+    const nl = { ...ledger };
+    players.forEach((id) => { nl[id] = { ...(nl[id] || {}), buyIn: amt }; });
+    setLedger(nl);
+    setBulkBuyIn("");
+    await Promise.all(players.map((id) => saveKey(KEYS.pokerEntry(ev.id, id), nl[id])));
+    const r = await onSave({ ...ev, ledger: nl, players, done });
+    if (showToast) showToast("ok");
+  };
   const standings = computeLedgerStandings({ ledger, players });
   const totalIn = standings.reduce((s, p) => s + p.buyIn, 0), totalOut = standings.reduce((s, p) => s + p.cashOut, 0);
   const balance = +(totalOut - totalIn).toFixed(2);
@@ -746,6 +758,13 @@ function PokerEditor({ ev, competitors, scheme, onBack, onSave, showToast }) {
               </div>
             ) : (
               <>
+                {players.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "8px 10px", background: "rgba(232,200,115,0.12)", borderRadius: 9, border: "1px solid rgba(232,200,115,0.3)" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#6b4a00", flex: 1 }}>Set buy-in for all</span>
+                    <MoneyInput value={bulkBuyIn} onChange={setBulkBuyIn} accent="#0c4026" />
+                    <button onClick={applyBulkBuyIn} disabled={!bulkBuyIn || isNaN(Number(bulkBuyIn)) || Number(bulkBuyIn) <= 0} style={{ ...smallBtn, background: "#15803d", color: "#fff", opacity: (!bulkBuyIn || isNaN(Number(bulkBuyIn)) || Number(bulkBuyIn) <= 0) ? 0.4 : 1 }}>Apply</button>
+                  </div>
+                )}
                 <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px 6px", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.4 }}><div style={{ flex: 1 }}>Player</div><div style={{ width: 78, textAlign: "center" }}>Buy-in</div><div style={{ width: 78, textAlign: "center" }}>End</div><div style={{ width: 56, textAlign: "right" }}>Net</div></div>
                 {players.length === 0 && <div style={{ fontSize: 13, color: "#94a3b8", textAlign: "center", padding: 8 }}>Tap "Who's playing" to seat the table.</div>}
                 {players.map((id) => {
