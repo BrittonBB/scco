@@ -94,7 +94,15 @@ function computeTennisStandings(ev) {
   return arr;
 }
 
-const KEYS = { competitors: "scco:competitors", teams: "scco:teams", events: "scco:events", scheme: "scco:scheme" };
+const YEAR = 2026;
+const KEYS = {
+  competitors: `scco:${YEAR}:competitors`,
+  teams:       `scco:${YEAR}:teams`,
+  events:      `scco:${YEAR}:events`,
+  scheme:      `scco:${YEAR}:scheme`,
+};
+// Legacy keys from before year-scoping — used once to migrate data
+const LEGACY_KEYS = { competitors: "scco:competitors", teams: "scco:teams", events: "scco:events", scheme: "scco:scheme" };
 const uid = () => Math.random().toString(36).slice(2, 9);
 const SEED_NAMES = ["Colby Jackson", "Nathan Platter", "Britton Blanchard", "Chris Freese", "Lucas Noland"];
 
@@ -113,6 +121,25 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
+      // One-time migration: if new year-scoped keys are empty, copy from legacy keys
+      const alreadyMigrated = await loadKey(KEYS.events, null);
+      if (alreadyMigrated == null) {
+        const [legacyC, legacyT, legacyE, legacyS] = await Promise.all([
+          loadKey(LEGACY_KEYS.competitors, null),
+          loadKey(LEGACY_KEYS.teams, null),
+          loadKey(LEGACY_KEYS.events, null),
+          loadKey(LEGACY_KEYS.scheme, null),
+        ]);
+        if (legacyE != null) {
+          await Promise.all([
+            legacyC != null && saveKey(KEYS.competitors, legacyC),
+            legacyT != null && saveKey(KEYS.teams, legacyT),
+            saveKey(KEYS.events, legacyE),
+            legacyS != null && saveKey(KEYS.scheme, legacyS),
+          ]);
+        }
+      }
+
       // Load existing data first — never overwrite what's already there
       let curr = await loadKey(KEYS.competitors, []);
       const have = new Set(curr.map((c) => c.name.trim().toLowerCase()));
